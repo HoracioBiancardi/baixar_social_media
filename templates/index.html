@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Downloader Universal de Vídeos</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0f172a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      color: #f8fafc;
+    }
+
+    .container {
+      background: #1e293b;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      max-width: 520px;
+      width: 100%;
+      border: 1px solid #334155;
+    }
+
+    h1 { color: #f1f5f9; margin-bottom: 8px; font-size: 24px; }
+
+    .subtitle { color: #94a3b8; margin-bottom: 28px; font-size: 14px; }
+
+    input[type="url"] {
+      width: 100%;
+      padding: 14px;
+      margin-bottom: 12px;
+      border: 1px solid #475569;
+      background-color: #0f172a;
+      color: white;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    input[type="url"]:focus {
+      border-color: #38bdf8;
+      outline: none;
+    }
+
+    button {
+      background-color: #0284c7;
+      color: white;
+      border: none;
+      padding: 14px 20px;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+      font-weight: bold;
+      transition: background 0.2s, opacity 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    button:hover:not(:disabled) { background-color: #0369a1; }
+    button:disabled { opacity: 0.65; cursor: not-allowed; }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #94a3b8;
+      display: none;
+    }
+
+    .alert {
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-top: 16px;
+      font-size: 13px;
+      text-align: left;
+      display: none;
+    }
+
+    .alert-error {
+      background: #450a0a;
+      border: 1px solid #7f1d1d;
+      color: #fca5a5;
+    }
+
+    .alert-success {
+      background: #052e16;
+      border: 1px solid #14532d;
+      color: #86efac;
+    }
+
+    .supported-brands {
+      margin-top: 28px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .brand {
+      background: #334155;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Downloader Universal</h1>
+    <p class="subtitle">Cole o link do vídeo para baixar no melhor formato disponível.</p>
+
+    <form id="downloadForm">
+      <input type="url" id="urlInput" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
+      <button type="submit" id="btn">
+        <span id="btnText">Processar e Baixar</span>
+      </button>
+    </form>
+
+    <p class="status" id="status">Processando... isso pode levar alguns segundos.</p>
+    <div class="alert alert-error" id="errorBox"></div>
+    <div class="alert alert-success" id="successBox"></div>
+
+    <div class="supported-brands">
+      <span class="brand">YouTube</span>
+      <span class="brand">TikTok</span>
+      <span class="brand">Instagram</span>
+      <span class="brand">Twitter / X</span>
+      <span class="brand">Facebook</span>
+      <span class="brand">+1000 sites</span>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('downloadForm');
+    const btn = document.getElementById('btn');
+    const btnText = document.getElementById('btnText');
+    const status = document.getElementById('status');
+    const errorBox = document.getElementById('errorBox');
+    const successBox = document.getElementById('successBox');
+
+    function setLoading(loading) {
+      btn.disabled = loading;
+      status.style.display = loading ? 'block' : 'none';
+      if (loading) {
+        btn.innerHTML = '<div class="spinner"></div><span>Baixando...</span>';
+      } else {
+        btn.innerHTML = '<span id="btnText">Processar e Baixar</span>';
+      }
+    }
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = 'block';
+      successBox.style.display = 'none';
+    }
+
+    function showSuccess(filename) {
+      successBox.textContent = `Download iniciado: ${filename}`;
+      successBox.style.display = 'block';
+      errorBox.style.display = 'none';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.style.display = 'none';
+      successBox.style.display = 'none';
+
+      const url = document.getElementById('urlInput').value.trim();
+      if (!url) return;
+
+      setLoading(true);
+
+      try {
+        const response = await fetch('/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ url }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ detail: 'Erro desconhecido.' }));
+          showError(`Erro: ${err.detail}`);
+          return;
+        }
+
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^";\n]+)"?/);
+        const filename = match ? decodeURIComponent(match[1]) : 'video.mp4';
+
+        const blob = await response.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+
+        showSuccess(filename);
+        form.reset();
+      } catch {
+        showError('Não foi possível conectar ao servidor.');
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
+</body>
+
+</html>

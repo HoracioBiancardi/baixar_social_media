@@ -1,235 +1,353 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Downloader Universal de Vídeos</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #050b18;
+      --glass: rgba(12, 22, 48, 0.72);
+      --glass-input: rgba(6, 14, 32, 0.6);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-glow: rgba(59, 130, 246, 0.35);
+      --danger: #ef4444;
+      --success: #10b981;
+      --text: #e2e8f0;
+      --text-muted: #8ba3c7;
+      --border: rgba(99, 155, 255, 0.13);
+      --border-bright: rgba(99, 155, 255, 0.28);
+      --shadow-md: 0 8px 40px rgba(0,0,0,.65);
+      --glow-ring: 0 0 0 3px rgba(59,130,246,.18);
+    }
 
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #0f172a;
-      display: flex;
-      justify-content: center;
-      align-items: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
-      margin: 0;
-      color: #f8fafc;
-    }
-
-    .container {
-      background: #1e293b;
-      padding: 40px;
-      border-radius: 16px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-      text-align: center;
-      max-width: 520px;
-      width: 100%;
-      border: 1px solid #334155;
-    }
-
-    h1 { color: #f1f5f9; margin-bottom: 8px; font-size: 24px; }
-
-    .subtitle { color: #94a3b8; margin-bottom: 28px; font-size: 14px; }
-
-    input[type="url"] {
-      width: 100%;
-      padding: 14px;
-      margin-bottom: 12px;
-      border: 1px solid #475569;
-      background-color: #0f172a;
-      color: white;
-      border-radius: 8px;
       font-size: 14px;
-      transition: border-color 0.2s;
-    }
-
-    input[type="url"]:focus {
-      border-color: #38bdf8;
-      outline: none;
-    }
-
-    button {
-      background-color: #0284c7;
-      color: white;
-      border: none;
-      padding: 14px 20px;
-      font-size: 16px;
-      border-radius: 8px;
-      cursor: pointer;
-      width: 100%;
-      font-weight: bold;
-      transition: background 0.2s, opacity 0.2s;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      overflow-x: hidden;
     }
 
-    button:hover:not(:disabled) { background-color: #0369a1; }
-    button:disabled { opacity: 0.65; cursor: not-allowed; }
-
-    .spinner {
-      width: 16px;
-      height: 16px;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-top-color: white;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      flex-shrink: 0;
+    /* ── Background ─────────────────────────────────────────────────── */
+    #bg-canvas { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+    .aurora { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .orb { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .45; animation: drift linear infinite; }
+    .orb-1 { width: 600px; height: 600px; background: radial-gradient(circle, #1d4ed8 0%, transparent 70%); top: -15%; left: -10%; animation-duration: 22s; }
+    .orb-2 { width: 500px; height: 500px; background: radial-gradient(circle, #6d28d9 0%, transparent 70%); bottom: -10%; right: -5%; animation-duration: 28s; animation-direction: reverse; }
+    .orb-3 { width: 400px; height: 400px; background: radial-gradient(circle, #0e7490 0%, transparent 70%); top: 40%; left: 50%; animation-duration: 18s; }
+    .orb-4 { width: 350px; height: 350px; background: radial-gradient(circle, #be185d 0%, transparent 70%); top: 10%; right: 20%; animation-duration: 32s; animation-direction: reverse; opacity: .25; }
+    @keyframes drift {
+      0%   { transform: translate(0, 0) scale(1); }
+      33%  { transform: translate(40px, -30px) scale(1.07); }
+      66%  { transform: translate(-25px, 45px) scale(.95); }
+      100% { transform: translate(0, 0) scale(1); }
     }
 
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .status {
-      margin-top: 16px;
-      font-size: 13px;
-      color: #94a3b8;
-      display: none;
+    /* ── Glass ──────────────────────────────────────────────────────── */
+    .glass {
+      background: var(--glass);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,.06);
     }
 
-    .alert {
-      border-radius: 8px;
-      padding: 12px 14px;
-      margin-top: 16px;
-      font-size: 13px;
-      text-align: left;
-      display: none;
-    }
-
-    .alert-error {
-      background: #450a0a;
-      border: 1px solid #7f1d1d;
-      color: #fca5a5;
-    }
-
-    .alert-success {
-      background: #052e16;
-      border: 1px solid #14532d;
-      color: #86efac;
-    }
-
-    .supported-brands {
-      margin-top: 28px;
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 8px;
+    /* ── Card ───────────────────────────────────────────────────────── */
+    .card {
+      position: relative; z-index: 1;
+      border-radius: 20px;
+      padding: 2.75rem;
+      width: 100%;
+      max-width: 480px;
+      animation: fadeUp .6s cubic-bezier(.16,1,.3,1) both;
     }
 
     .brand {
-      background: #334155;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      color: #cbd5e1;
+      display: flex; align-items: center; gap: .75rem;
+      margin-bottom: 1.75rem;
     }
+    .brand .icon {
+      width: 46px; height: 46px;
+      background: linear-gradient(135deg, #3b82f6, #6d28d9);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.375rem;
+      box-shadow: 0 4px 16px rgba(59,130,246,.4);
+      flex-shrink: 0;
+    }
+    .brand h1 { font-size: 1.375rem; font-weight: 700; }
+    .brand .subtitle { font-size: .8125rem; color: var(--text-muted); margin-top: .1rem; }
+
+    .divider { height: 1px; background: var(--border); margin-bottom: 1.5rem; }
+
+    /* ── Form ───────────────────────────────────────────────────────── */
+    .field { margin-bottom: 1rem; }
+    .field label {
+      display: block; font-weight: 500; font-size: .8125rem;
+      margin-bottom: .4rem; color: var(--text-muted);
+      letter-spacing: .02em; text-transform: uppercase;
+    }
+    .field input {
+      width: 100%; padding: .6rem .875rem;
+      border: 1px solid var(--border); border-radius: 9px;
+      font-size: .875rem; outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      background: var(--glass-input); color: var(--text); font-family: inherit;
+    }
+    .field input::placeholder { color: rgba(139,163,199,.5); }
+    .field input:focus { border-color: var(--primary); box-shadow: var(--glow-ring); animation: focusPulse .25s ease; }
+
+    /* ── Button ─────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+      padding: .65rem 1.1rem; border-radius: 9px;
+      font-size: .9375rem; font-weight: 600;
+      border: none; cursor: pointer;
+      transition: box-shadow .2s, transform .1s;
+      width: 100%;
+    }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn:active:not(:disabled) { transform: scale(.97); }
+    .btn-primary {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(59,130,246,.3);
+      position: relative; overflow: hidden;
+    }
+    .btn-primary::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.2) 50%, transparent 60%);
+      background-size: 200% 100%; opacity: 0; transition: opacity .2s;
+    }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 6px 24px rgba(59,130,246,.5); }
+    .btn-primary:hover:not(:disabled)::after { opacity: 1; animation: shimmer .7s linear; }
+
+    /* ── Alerts ─────────────────────────────────────────────────────── */
+    .alert {
+      border-radius: 9px; padding: .65rem .875rem;
+      margin-top: 1rem; font-size: .8125rem;
+      display: none;
+    }
+    .alert-error {
+      background: rgba(239,68,68,.1);
+      border: 1px solid rgba(239,68,68,.25);
+      color: #fca5a5;
+    }
+    .alert-success {
+      background: rgba(16,185,129,.1);
+      border: 1px solid rgba(16,185,129,.25);
+      color: #6ee7b7;
+    }
+
+    /* ── Brands ─────────────────────────────────────────────────────── */
+    .supported {
+      margin-top: 1.5rem;
+      display: flex; flex-wrap: wrap; gap: .4rem;
+      justify-content: center;
+    }
+    .badge {
+      background: rgba(99,155,255,.08);
+      border: 1px solid var(--border);
+      padding: .2rem .65rem;
+      border-radius: 99px;
+      font-size: .75rem;
+      color: var(--text-muted);
+    }
+
+    /* ── Spinner ────────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block; width: 1rem; height: 1rem;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin .6s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* ── Toast ──────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      padding: .8rem 1.25rem; border-radius: 11px;
+      font-size: .875rem; font-weight: 500; color: #fff;
+      box-shadow: var(--shadow-md);
+      opacity: 0; transform: translateY(10px) scale(.97);
+      transition: opacity .3s, transform .3s cubic-bezier(.16,1,.3,1);
+      pointer-events: none; z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .toast.visible { opacity: 1; transform: translateY(0) scale(1); }
+    .toast.success { background: rgba(16,185,129,.85); border: 1px solid rgba(16,185,129,.3); }
+    .toast.error   { background: rgba(239,68,68,.85);  border: 1px solid rgba(239,68,68,.3); }
+
+    /* ── Keyframes ──────────────────────────────────────────────────── */
+    @keyframes spin        { to { transform: rotate(360deg); } }
+    @keyframes shimmer     { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+    @keyframes fadeUp      { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes focusPulse  { 0% { box-shadow: 0 0 0 0 rgba(59,130,246,.4); } 60% { box-shadow: 0 0 0 6px rgba(59,130,246,.12); } 100% { box-shadow: 0 0 0 3px rgba(59,130,246,.18); } }
   </style>
 </head>
-
 <body>
-  <div class="container">
-    <h1>Downloader Universal</h1>
-    <p class="subtitle">Cole o link do vídeo para baixar no melhor formato disponível.</p>
 
-    <form id="downloadForm">
-      <input type="url" id="urlInput" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
-      <button type="submit" id="btn">
-        <span id="btnText">Processar e Baixar</span>
-      </button>
-    </form>
+<canvas id="bg-canvas"></canvas>
+<div class="aurora">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+  <div class="orb orb-4"></div>
+</div>
 
-    <p class="status" id="status">Processando... isso pode levar alguns segundos.</p>
-    <div class="alert alert-error" id="errorBox"></div>
-    <div class="alert alert-success" id="successBox"></div>
-
-    <div class="supported-brands">
-      <span class="brand">YouTube</span>
-      <span class="brand">TikTok</span>
-      <span class="brand">Instagram</span>
-      <span class="brand">Twitter / X</span>
-      <span class="brand">Facebook</span>
-      <span class="brand">+1000 sites</span>
+<div class="card glass">
+  <div class="brand">
+    <div class="icon">⬇️</div>
+    <div>
+      <h1>Downloader Universal</h1>
+      <div class="subtitle">Cole o link do vídeo para baixar</div>
     </div>
   </div>
+  <div class="divider"></div>
 
-  <script>
-    const form = document.getElementById('downloadForm');
-    const btn = document.getElementById('btn');
-    const btnText = document.getElementById('btnText');
-    const status = document.getElementById('status');
-    const errorBox = document.getElementById('errorBox');
-    const successBox = document.getElementById('successBox');
+  <form id="downloadForm">
+    <div class="field">
+      <label for="urlInput">URL do vídeo</label>
+      <input type="url" id="urlInput" name="url"
+             placeholder="https://www.youtube.com/watch?v=..." required autocomplete="off">
+    </div>
+    <button type="submit" id="btn" class="btn btn-primary">
+      <span id="btnText">Processar e Baixar</span>
+    </button>
+  </form>
 
-    function setLoading(loading) {
-      btn.disabled = loading;
-      status.style.display = loading ? 'block' : 'none';
-      if (loading) {
-        btn.innerHTML = '<div class="spinner"></div><span>Baixando...</span>';
-      } else {
-        btn.innerHTML = '<span id="btnText">Processar e Baixar</span>';
-      }
-    }
+  <div class="alert alert-error" id="errorBox"></div>
+  <div class="alert alert-success" id="successBox"></div>
 
-    function showError(msg) {
-      errorBox.textContent = msg;
-      errorBox.style.display = 'block';
-      successBox.style.display = 'none';
-    }
+  <div class="supported">
+    <span class="badge">YouTube</span>
+    <span class="badge">TikTok</span>
+    <span class="badge">Instagram</span>
+    <span class="badge">Twitter / X</span>
+    <span class="badge">Facebook</span>
+    <span class="badge">+1000 sites</span>
+  </div>
+</div>
 
-    function showSuccess(filename) {
-      successBox.textContent = `Download iniciado: ${filename}`;
-      successBox.style.display = 'block';
-      errorBox.style.display = 'none';
-    }
+<div class="toast" id="toast"></div>
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      errorBox.style.display = 'none';
-      successBox.style.display = 'none';
-
-      const url = document.getElementById('urlInput').value.trim();
-      if (!url) return;
-
-      setLoading(true);
-
-      try {
-        const response = await fetch('/download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ url }),
-        });
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ detail: 'Erro desconhecido.' }));
-          showError(`Erro: ${err.detail}`);
-          return;
+<script>
+  // ── Particle canvas ────────────────────────────────────────────────────
+  (function () {
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    const N = 85, MAX = 140;
+    let P = [], W, H;
+    function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+    function rnd(a, b) { return Math.random() * (b - a) + a; }
+    function mk() { return { x: rnd(0,W), y: rnd(0,H), vx: rnd(-.3,.3), vy: rnd(-.3,.3), r: rnd(1.2,2.5) }; }
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      for (let i = 0; i < P.length; i++) {
+        for (let j = i+1; j < P.length; j++) {
+          const dx = P[i].x-P[j].x, dy = P[i].y-P[j].y, d = Math.hypot(dx,dy);
+          if (d < MAX) { ctx.beginPath(); ctx.strokeStyle=`rgba(99,155,255,${(1-d/MAX)*.22})`; ctx.lineWidth=.8; ctx.moveTo(P[i].x,P[i].y); ctx.lineTo(P[j].x,P[j].y); ctx.stroke(); }
         }
-
-        const disposition = response.headers.get('Content-Disposition') || '';
-        const match = disposition.match(/filename="?([^";\n]+)"?/);
-        const filename = match ? decodeURIComponent(match[1]) : 'video.mp4';
-
-        const blob = await response.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(a.href);
-
-        showSuccess(filename);
-        form.reset();
-      } catch {
-        showError('Não foi possível conectar ao servidor.');
-      } finally {
-        setLoading(false);
       }
-    });
-  </script>
-</body>
+      for (const p of P) {
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fillStyle='rgba(120,170,255,0.55)'; ctx.fill();
+        p.x+=p.vx; p.y+=p.vy;
+        if(p.x<-10) p.x=W+10; if(p.x>W+10) p.x=-10;
+        if(p.y<-10) p.y=H+10; if(p.y>H+10) p.y=-10;
+      }
+      requestAnimationFrame(draw);
+    }
+    window.addEventListener('resize', resize);
+    resize(); P = Array.from({length:N},mk); draw();
+  })();
 
+  // ── Toast ──────────────────────────────────────────────────────────────
+  let toastTimer;
+  function toast(msg, type = 'success') {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.className = `toast ${type} visible`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('visible'), 3500);
+  }
+
+  // ── Download form ──────────────────────────────────────────────────────
+  const form      = document.getElementById('downloadForm');
+  const btn       = document.getElementById('btn');
+  const errorBox  = document.getElementById('errorBox');
+  const successBox= document.getElementById('successBox');
+
+  function setLoading(loading) {
+    btn.disabled = loading;
+    btn.innerHTML = loading
+      ? '<div class="spinner"></div><span>Baixando…</span>'
+      : '<span id="btnText">Processar e Baixar</span>';
+  }
+
+  function showError(msg) {
+    errorBox.textContent = msg; errorBox.style.display = 'block';
+    successBox.style.display = 'none';
+  }
+
+  function showSuccess(filename) {
+    successBox.textContent = `Download iniciado: ${filename}`; successBox.style.display = 'block';
+    errorBox.style.display = 'none';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+    successBox.style.display = 'none';
+
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) return;
+
+    setLoading(true);
+
+    try {
+      const response = await fetch('/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ url }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Erro desconhecido.' }));
+        showError(`Erro: ${err.detail}`);
+        toast(`Erro: ${err.detail}`, 'error');
+        return;
+      }
+
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^";\n]+)"?/);
+      const filename = match ? decodeURIComponent(match[1]) : 'video.mp4';
+
+      const blob = await response.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+
+      showSuccess(filename);
+      toast('Download concluído com sucesso!', 'success');
+      form.reset();
+    } catch {
+      showError('Não foi possível conectar ao servidor.');
+      toast('Não foi possível conectar ao servidor.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  });
+</script>
+</body>
 </html>

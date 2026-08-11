@@ -259,7 +259,10 @@ class LoggerService:
             level = getattr(logging, level, logging.INFO)
 
         self.logger.setLevel(level)  # type: ignore
-        self.logger.propagate = False
+        # Propaga pro logger raiz — é lá que main.py anexa o handler do
+        # log_buffer_service (console/UI de logs), então esse logger
+        # nomeado precisa deixar seus registros subirem até ele.
+        self.logger.propagate = True
 
         # Evita a duplicação de handlers se este logger já foi inicializado
         if self.logger.handlers:
@@ -303,17 +306,17 @@ class LoggerService:
 def _initialize_global_logger() -> LoguruCompatibleLogger:
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     log_to_json = os.getenv("LOG_TO_JSON", "FALSE").upper() == "TRUE"
-    log_path = os.getenv("LOG_PATH", "logs/pipeline.log")
+    log_path = os.getenv("LOG_PATH", "logs/baixar_social_media.log")
 
     # Se log_to_json for ativado e estiver usando o arquivo default, rotacionamos para .json
-    if log_to_json and log_path == "logs/pipeline.log":
-        log_path = "logs/pipeline.json"
+    if log_to_json and log_path == "logs/baixar_social_media.log":
+        log_path = "logs/baixar_social_media.json"
 
     # Sempre ativa escrita em ficheiro se LOG_PATH estiver definido
     enable_file = bool(log_path)
 
     service = LoggerService(
-        name="pipeline_ingestion",
+        name="baixar_social_media",
         level=log_level,
         use_background=True,
         use_json=log_to_json,
@@ -340,9 +343,9 @@ def get_logger(*args: Any, **kwargs: Any) -> LoguruCompatibleLogger:
     job = kwargs.get("job")
     run_id = kwargs.get("run_id")
 
-    # Se apenas metadados de bind foram especificados (sem nome diferente de "pipeline_ingestion"),
+    # Se apenas metadados de bind foram especificados (sem nome diferente de "baixar_social_media"),
     # reutilizamos o _global_logger e apenas fazemos bind para evitar recriar os handlers de arquivo e console.
-    if (name is None or name == "pipeline_ingestion") and (pipeline or job or run_id):
+    if (name is None or name == "baixar_social_media") and (pipeline or job or run_id):
         l = _global_logger
         bind_kwargs = {}
         if pipeline:
@@ -354,15 +357,15 @@ def get_logger(*args: Any, **kwargs: Any) -> LoguruCompatibleLogger:
         return l.bind(**bind_kwargs)
 
     # Caso contrário, cria um novo LoggerService (ex: se um nome de sub-logger específico for pedido)
-    target_name = name or "pipeline_ingestion"
+    target_name = name or "baixar_social_media"
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     log_to_json = os.getenv("LOG_TO_JSON", "FALSE").upper() == "TRUE"
-    log_path = os.getenv("LOG_PATH", "logs/pipeline.log")
+    log_path = os.getenv("LOG_PATH", "logs/baixar_social_media.log")
     enable_file = bool(log_path)
 
     # Se log_to_json for ativado e estiver usando o arquivo default, rotacionamos para .json
-    if log_to_json and log_path == "logs/pipeline.log":
-        log_path = "logs/pipeline.json"
+    if log_to_json and log_path == "logs/baixar_social_media.log":
+        log_path = "logs/baixar_social_media.json"
 
     service = LoggerService(
         name=target_name,

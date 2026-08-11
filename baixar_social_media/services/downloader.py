@@ -7,8 +7,8 @@ from typing import Any
 
 import yt_dlp
 
-from app.core.config import settings
-from app.core.logger import get_logger
+from baixar_social_media.core.config import settings
+from baixar_social_media.core.logger import get_logger
 
 logger = get_logger()
 

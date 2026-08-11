@@ -7,14 +7,15 @@ from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from app.services.downloader import DownloadError, downloader
-from app.core.logger import get_logger
+from baixar_social_media.services.downloader import DownloadError, downloader
+from baixar_social_media.core.logger import get_logger
 
 logger = get_logger()
 router = APIRouter()
 
-_BASE_DIR = Path(__file__).resolve().parent.parent.parent
-templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
+_BASE_DIR = Path(__file__).resolve().parent.parent
+frontend = Jinja2Templates(directory=str(_BASE_DIR / "frontend"))
+
 
 
 def _safe_filename(title: str) -> str:
@@ -27,7 +28,7 @@ def _safe_filename(title: str) -> str:
 
 @router.get("/")
 async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    return frontend.TemplateResponse(request, "index.html")
 
 
 @router.post("/download")

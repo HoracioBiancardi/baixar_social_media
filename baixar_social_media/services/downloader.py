@@ -1,9 +1,12 @@
 import asyncio
+import ipaddress
 import os
 import shutil
+import socket
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from urllib.parse import urlparse
 
 import yt_dlp
 
@@ -14,9 +17,50 @@ logger = get_logger()
 
 _executor = ThreadPoolExecutor(max_workers=settings.DOWNLOAD_MAX_WORKERS)
 
+_ALLOWED_SCHEMES = {"http", "https"}
+
 
 class DownloadError(Exception):
     pass
+
+
+class UnsafeURLError(ValueError):
+    """URL rejeitada por apontar (direta ou indiretamente, via DNS) para um
+    destino de rede não permitido — ex.: localhost, IP privado/link-local
+    ou o endpoint de metadados de nuvem (169.254.169.254)."""
+
+
+def _validate_public_url(url: str) -> None:
+    """Bloqueia SSRF: exige esquema http(s) e resolve o host para garantir
+    que nenhum IP retornado seja privado, loopback, link-local ou reservado.
+
+    Resolve via socket.getaddrinfo (não apenas compara a string do host),
+    pois um hostname atacante-controlado pode resolver para um IP interno.
+    """
+    parsed = urlparse(url)
+
+    if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
+        raise UnsafeURLError("Esquema de URL não permitido.")
+
+    host = parsed.hostname
+    if not host:
+        raise UnsafeURLError("URL sem host válido.")
+
+    try:
+        addr_infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        raise UnsafeURLError(f"Não foi possível resolver o host: {e}") from e
+
+    if not addr_infos:
+        raise UnsafeURLError("Não foi possível resolver o host.")
+
+    for info in addr_infos:
+        raw_addr = info[4][0]
+        # IPv6 pode vir com escopo (ex.: "fe80::1%eth0"); ipaddress não aceita isso.
+        ip_str = raw_addr.split("%", 1)[0]
+        ip = ipaddress.ip_address(ip_str)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise UnsafeURLError("URL aponta para um destino de rede não permitido.")
 
 
 class UniversalDownloaderService:
@@ -32,8 +76,11 @@ class UniversalDownloaderService:
             tuple[str, str]: Caminho do arquivo local e o título original do vídeo.
 
         Raises:
+            UnsafeURLError: Se a URL não passar na validação anti-SSRF.
             DownloadError: Se o yt-dlp falhar ao processar a URL.
         """
+        _validate_public_url(url)
+
         output_template = os.path.join(self.output_dir, "%(id)s.%(ext)s")
         has_ffmpeg = shutil.which("ffmpeg") is not None
 

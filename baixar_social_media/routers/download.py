@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from baixar_social_media.services.downloader import DownloadError, downloader
+from baixar_social_media.services.downloader import DownloadError, UnsafeURLError, downloader
 from baixar_social_media.core.logger import get_logger
 
 logger = get_logger()
@@ -35,6 +35,9 @@ async def index(request: Request):
 async def download_video(url: str = Form(...)):
     try:
         filename, title = await downloader.download_async(url)
+    except UnsafeURLError as e:
+        logger.warning(f"URL bloqueada por proteção anti-SSRF: {e}")
+        raise HTTPException(status_code=400, detail="URL não permitida.")
     except DownloadError as e:
         logger.warning(f"Falha no download: {e}")
         raise HTTPException(status_code=422, detail=str(e))

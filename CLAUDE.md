@@ -28,3 +28,9 @@ uv run pytest -v
 - **`services/log_buffer_service.py`**: console de logs circular em memória, `LogBufferHandler` anexado ao logger raiz em `main.py` — captura automaticamente qualquer `logging.getLogger(__name__)` de qualquer módulo, incluindo o `core/logger.py`.
 - **`routers/system.py`**: `GET /api/system/health`, `/metrics`, `/logs`, `POST /logs/clear` (paridade com o `app_template`, só backend).
 - Sem `crypto_vault_service`/`db_service`/`task_runner_service`/`auth_service` — domínio (download de vídeo via yt-dlp) não usa persistência, criptografia, jobs em segundo plano nem autenticação.
+
+---
+
+## 🔒 Revisão de Segurança
+
+@~/.claude/security-review-checklist.md

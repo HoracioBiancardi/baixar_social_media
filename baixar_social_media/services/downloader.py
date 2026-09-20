@@ -1,12 +1,17 @@
 import asyncio
 import ipaddress
 import os
+import re
 import shutil
 import socket
 import tempfile
 import threading
+import unicodedata
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass
+from functools import partial
 from typing import Any
 from urllib.parse import urlparse
 
@@ -122,74 +127,196 @@ def _pin_dns(hostname: str, resolved_ip: str):
             pins[hostname] = previous
 
 
+@dataclass
+class DownloadResult:
+    """Arquivo pronto para envio. `workdir` é o diretório temporário da
+    requisição — o chamador deve removê-lo após enviar o arquivo."""
+
+    path: str
+    filename: str
+    media_type: str
+    workdir: str
+
+
+_AUDIO_CODECS = {"mp3", "m4a", "opus", "flac", "wav"}
+_MEDIA_TYPES = {
+    "mp3": "audio/mpeg",
+    "m4a": "audio/mp4",
+    "opus": "audio/ogg",
+    "flac": "audio/flac",
+    "wav": "audio/wav",
+    "mp4": "video/mp4",
+    "webm": "audio/webm",
+    "zip": "application/zip",
+}
+
+
+_INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f\x7f]')
+
+
+def _safe_name(title: str) -> str:
+    """Mantém o título original (acentos, emojis, etc.), removendo apenas o
+    que é inválido em nomes de arquivo ou permitiria path traversal."""
+    safe = _INVALID_FILENAME_CHARS.sub("_", unicodedata.normalize("NFC", title))
+    safe = safe.strip().strip(".")  # evita nomes ocultos/".."
+    return safe[:120].strip() or "midia"
+
+
+class _ErrorCollector:
+    """Logger do yt-dlp que guarda as mensagens de erro — com ignoreerrors
+    (playlist) o yt-dlp não levanta exceção, e sem isso a causa se perderia."""
+
+    def __init__(self) -> None:
+        self.errors: list[str] = []
+
+    def debug(self, msg: str) -> None:
+        pass
+
+    warning = debug
+
+    def error(self, msg: str) -> None:
+        self.errors.append(msg)
+
+
 class UniversalDownloaderService:
     """Gerencia downloads de plataformas variadas usando a flexibilidade do yt-dlp."""
 
-    def __init__(self) -> None:
-        self.output_dir = tempfile.gettempdir()
+    def download_media(
+        self,
+        url: str,
+        mode: str = "video",
+        audio_format: str = "opus",
+        playlist: bool = False,
+    ) -> DownloadResult:
+        """Baixa vídeo ou áudio (melhor qualidade disponível) de uma URL.
 
-    def download_video(self, url: str) -> tuple[str, str]:
-        """Extrai e baixa a mídia de qualquer URL suportada pelo yt-dlp.
-
-        Returns:
-            tuple[str, str]: Caminho do arquivo local e o título original do vídeo.
+        Com `playlist=True` baixa todos os itens (até DOWNLOAD_MAX_PLAYLIST_ITEMS)
+        e devolve um .zip; caso contrário, apenas o item da URL.
 
         Raises:
             UnsafeURLError: Se a URL não passar na validação anti-SSRF.
-            DownloadError: Se o yt-dlp falhar ao processar a URL.
+            DownloadError: Se o yt-dlp falhar ou algum limite for excedido.
         """
+        if mode not in ("video", "audio"):
+            raise DownloadError("Modo inválido.")
+        if audio_format not in _AUDIO_CODECS:
+            raise DownloadError("Formato de áudio inválido.")
+
         host, pinned_ip = _validate_public_url(url)
 
-        output_template = os.path.join(self.output_dir, "%(id)s.%(ext)s")
-        has_ffmpeg = shutil.which("ffmpeg") is not None
-
-        ydl_opts: dict[str, Any] = {
-            "outtmpl": output_template,
-            "format": "bestvideo+bestaudio/best" if has_ffmpeg else "best[ext=mp4]/best",
-            "quiet": True,
-            "no_warnings": True,
-            "max_filesize": settings.DOWNLOAD_MAX_FILESIZE_BYTES,
-        }
-        if has_ffmpeg:
-            ydl_opts["merge_output_format"] = "mp4"
-
-        if not has_ffmpeg:
-            logger.warning("ffmpeg não encontrado — usando qualidade pré-mesclada (instale ffmpeg para melhor qualidade).")
-
-        # Fixa a resolução DNS no IP já validado por _validate_public_url para
-        # toda a duração da extração/download (ver _pin_dns): impede que uma
-        # segunda resolução (feita internamente pelo yt-dlp no momento da
-        # conexão real) responda um IP interno diferente do que foi validado
-        # (DNS rebinding / TOCTOU).
+        workdir = tempfile.mkdtemp(prefix="bsm_")
         try:
-            with _pin_dns(host, pinned_ip):
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
-                    probe_info = ydl.extract_info(url, download=False)
-                    duration = (probe_info or {}).get("duration")
-                    if duration is not None and duration > settings.DOWNLOAD_MAX_DURATION_SECONDS:
-                        raise DownloadError(
-                            f"Vídeo excede a duração máxima permitida "
-                            f"({settings.DOWNLOAD_MAX_DURATION_SECONDS}s)."
-                        )
-
-                    info = ydl.extract_info(url, download=True)
-                    title: str = info.get("title") or "video_baixado"
-                    filename = ydl.prepare_filename(info)
-                    if has_ffmpeg and not filename.endswith(".mp4"):
-                        filename = os.path.splitext(filename)[0] + ".mp4"
+            return self._run(url, host, pinned_ip, workdir, mode, audio_format, playlist)
         except DownloadError:
+            shutil.rmtree(workdir, ignore_errors=True)
             raise
         except Exception as e:
-            raise DownloadError(f"Não foi possível baixar o vídeo: {e}") from e
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise DownloadError(f"Não foi possível baixar a mídia: {e}") from e
 
-        return filename, title
+    def _run(
+        self,
+        url: str,
+        host: str,
+        pinned_ip: str,
+        workdir: str,
+        mode: str,
+        audio_format: str,
+        playlist: bool,
+    ) -> DownloadResult:
+        has_ffmpeg = shutil.which("ffmpeg") is not None
+        max_duration = settings.DOWNLOAD_MAX_DURATION_SECONDS
 
-    async def download_async(self, url: str) -> tuple[str, str]:
-        logger.info(f"Recebida solicitação de download: {url}")
+        def _match_filter(info: dict[str, Any], *, incomplete: bool = False) -> str | None:
+            duration = info.get("duration")
+            if duration is not None and duration > max_duration:
+                return f"Mídia excede a duração máxima permitida ({max_duration}s)."
+            return None
+
+        collector = _ErrorCollector()
+        ydl_opts: dict[str, Any] = {
+            "outtmpl": os.path.join(workdir, "%(playlist_index&{} - |)s%(title).100B [%(id)s].%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "logger": collector,
+            "windowsfilenames": True,
+            "noplaylist": not playlist,
+            "max_filesize": settings.DOWNLOAD_MAX_FILESIZE_BYTES,
+            "match_filter": _match_filter,
+            "js_runtimes": {settings.YTDLP_JS_RUNTIME: {}},
+            "extractor_args": {"youtube": {"player_client": settings.YTDLP_YOUTUBE_CLIENTS.split(",")}},
+            "ignoreerrors": "only_download" if playlist else False,
+        }
+        if playlist:
+            ydl_opts["playlistend"] = settings.DOWNLOAD_MAX_PLAYLIST_ITEMS
+
+        out_ext = "mp4"
+        if mode == "audio":
+            ydl_opts["format"] = "bestaudio/best"
+            if has_ffmpeg:
+                out_ext = audio_format
+                ydl_opts["postprocessors"] = [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": audio_format,
+                        # 0 = melhor qualidade VBR; ignorado por codecs sem perda.
+                        "preferredquality": "0" if audio_format != "mp3" else "320",
+                    }
+                ]
+            else:
+                out_ext = ""  # mantém o formato nativo (m4a/webm) sem conversão
+                logger.warning("ffmpeg não encontrado — áudio entregue no formato original, sem conversão.")
+        else:
+            ydl_opts["format"] = "bestvideo+bestaudio/best" if has_ffmpeg else "best[ext=mp4]/best"
+            if has_ffmpeg:
+                ydl_opts["merge_output_format"] = "mp4"
+            else:
+                logger.warning("ffmpeg não encontrado — usando qualidade pré-mesclada.")
+
+        # Fixa a resolução DNS no IP já validado (ver _pin_dns): impede DNS
+        # rebinding entre a validação e a conexão real feita pelo yt-dlp.
+        with _pin_dns(host, pinned_ip):
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
+                info = ydl.extract_info(url, download=True)
+
+        if not info:
+            raise DownloadError("Nenhuma informação retornada para a URL.")
+
+        files = sorted(
+            os.path.join(workdir, f) for f in os.listdir(workdir) if not f.endswith((".part", ".ytdl"))
+        )
+        if not files:
+            detail = collector.errors[-1] if collector.errors else "verifique limites de tamanho/duração."
+            raise DownloadError(f"Nenhum arquivo foi baixado: {detail}")
+
+        if collector.errors:
+            logger.warning(f"{len(collector.errors)} item(ns) falharam: {collector.errors[-1]}")
+
+        title = info.get("title") or "midia_baixada"
+
+        if playlist and info.get("_type") == "playlist" and len(files) > 1:
+            zip_path = os.path.join(workdir, "playlist.zip")
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+                for f in files:
+                    zf.write(f, arcname=os.path.basename(f))
+            return DownloadResult(zip_path, f"{_safe_name(title)}.zip", _MEDIA_TYPES["zip"], workdir)
+
+        path = files[0]
+        ext = os.path.splitext(path)[1].lstrip(".").lower()
+        return DownloadResult(
+            path,
+            f"{_safe_name(title)}.{ext or out_ext}",
+            _MEDIA_TYPES.get(ext, "application/octet-stream"),
+            workdir,
+        )
+
+    async def download_async(self, url: str, **kwargs: Any) -> DownloadResult:
+        logger.info(f"Recebida solicitação de download: {url} {kwargs}")
         loop = asyncio.get_running_loop()
-        filename, title = await loop.run_in_executor(_executor, self.download_video, url)
-        logger.info(f"Download concluído: {title!r}")
-        return filename, title
+        result = await loop.run_in_executor(_executor, partial(self.download_media, url, **kwargs))
+        logger.info(f"Download concluído: {result.filename!r}")
+        return result
 
 
 downloader = UniversalDownloaderService()

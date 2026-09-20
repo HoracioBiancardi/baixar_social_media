@@ -95,7 +95,7 @@
       margin-bottom: .4rem; color: var(--text-muted);
       letter-spacing: .02em; text-transform: uppercase;
     }
-    .field input {
+    .field input:not([type=checkbox]), .field select {
       width: 100%; padding: .6rem .875rem;
       border: 1px solid var(--border); border-radius: 9px;
       font-size: .875rem; outline: none;
@@ -103,7 +103,7 @@
       background: var(--glass-input); color: var(--text); font-family: inherit;
     }
     .field input::placeholder { color: rgba(139,163,199,.5); }
-    .field input:focus { border-color: var(--primary); box-shadow: var(--glow-ring); animation: focusPulse .25s ease; }
+    .field input:focus, .field select:focus { border-color: var(--primary); box-shadow: var(--glow-ring); animation: focusPulse .25s ease; }
 
     /* ── Button ─────────────────────────────────────────────────────── */
     .btn {
@@ -217,7 +217,29 @@
     <div class="field">
       <label for="urlInput">URL do vídeo</label>
       <input type="url" id="urlInput" name="url"
-             placeholder="https://www.youtube.com/watch?v=..." required autocomplete="off">
+             placeholder="https://www.youtube.com/watch?v=... ou link de playlist" required autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="modeInput">Formato</label>
+      <select id="modeInput" name="mode">
+        <option value="video">Vídeo (MP4, melhor qualidade)</option>
+        <option value="audio">Áudio (melhor qualidade)</option>
+      </select>
+    </div>
+    <div class="field" id="audioFormatField" style="display:none">
+      <label for="audioFormatInput">Codec de áudio</label>
+      <select id="audioFormatInput" name="audio_format">
+        <option value="opus">Opus (melhor qualidade, sem recodificar)</option>
+        <option value="mp3">MP3 (320 kbps)</option>
+        <option value="m4a">M4A (AAC)</option>
+        <option value="flac">FLAC (sem perda)</option>
+        <option value="wav">WAV (sem compressão)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label style="display:flex;gap:.5rem;align-items:center;text-transform:none;letter-spacing:0">
+        <input type="checkbox" id="playlistInput"> Baixar playlist completa (ZIP)
+      </label>
     </div>
     <button type="submit" id="btn" class="btn btn-primary">
       <span id="btnText">Processar e Baixar</span>
@@ -301,6 +323,12 @@
     errorBox.style.display = 'none';
   }
 
+  const modeInput = document.getElementById('modeInput');
+  modeInput.addEventListener('change', () => {
+    document.getElementById('audioFormatField').style.display =
+      modeInput.value === 'audio' ? 'block' : 'none';
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     errorBox.style.display = 'none';
@@ -315,7 +343,12 @@
       const response = await fetch('/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ url }),
+        body: new URLSearchParams({
+          url,
+          mode: modeInput.value,
+          audio_format: document.getElementById('audioFormatInput').value,
+          playlist: document.getElementById('playlistInput').checked ? 'true' : 'false',
+        }),
       });
 
       if (!response.ok) {
@@ -326,8 +359,9 @@
       }
 
       const disposition = response.headers.get('Content-Disposition') || '';
-      const match = disposition.match(/filename="?([^";\n]+)"?/);
-      const filename = match ? decodeURIComponent(match[1]) : 'video.mp4';
+      const star = disposition.match(/filename\*=(?:UTF-8|utf-8)''([^;\n]+)/);
+      const plain = disposition.match(/filename="?([^";\n]+)"?/);
+      const filename = star ? decodeURIComponent(star[1]) : plain ? plain[1] : 'download';
 
       const blob = await response.blob();
       const a = document.createElement('a');
@@ -341,6 +375,7 @@
       showSuccess(filename);
       toast('Download concluído com sucesso!', 'success');
       form.reset();
+      modeInput.dispatchEvent(new Event('change'));
     } catch {
       showError('Não foi possível conectar ao servidor.');
       toast('Não foi possível conectar ao servidor.', 'error');

@@ -182,3 +182,6 @@ uv.lock
 *.log
 logs/
 /log/*
+
+# Provedor de PO Token (clone + build local)
+tools/bgutil-pot-provider/

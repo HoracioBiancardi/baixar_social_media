@@ -1,5 +1,4 @@
-import os
-import unicodedata
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -18,23 +17,22 @@ frontend = Jinja2Templates(directory=str(_BASE_DIR / "frontend"))
 
 
 
-def _safe_filename(title: str) -> str:
-    """Normaliza o título para uso seguro como nome de arquivo."""
-    normalized = unicodedata.normalize("NFKD", title)
-    ascii_only = "".join(c for c in normalized if not unicodedata.combining(c))
-    safe = "".join(c if (c.isalnum() or c in " ._-") else "_" for c in ascii_only)
-    return safe.strip()[:120] or "video"
-
-
 @router.get("/")
 async def index(request: Request):
     return frontend.TemplateResponse(request, "index.html")
 
 
 @router.post("/download")
-async def download_video(url: str = Form(...)):
+async def download_media(
+    url: str = Form(...),
+    mode: str = Form("video"),
+    audio_format: str = Form("opus"),
+    playlist: bool = Form(False),
+):
     try:
-        filename, title = await downloader.download_async(url)
+        result = await downloader.download_async(
+            url, mode=mode, audio_format=audio_format, playlist=playlist
+        )
     except UnsafeURLError as e:
         logger.warning(f"URL bloqueada por proteção anti-SSRF: {e}")
         raise HTTPException(status_code=400, detail="URL não permitida.")
@@ -43,12 +41,11 @@ async def download_video(url: str = Form(...)):
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         logger.error(f"Erro inesperado no download: {e}")
-        raise HTTPException(status_code=500, detail="Erro interno ao processar o vídeo.")
+        raise HTTPException(status_code=500, detail="Erro interno ao processar a mídia.")
 
-    safe_title = _safe_filename(title)
     return FileResponse(
-        path=filename,
-        filename=f"{safe_title}.mp4",
-        media_type="video/mp4",
-        background=BackgroundTask(os.unlink, filename),
+        path=result.path,
+        filename=result.filename,
+        media_type=result.media_type,
+        background=BackgroundTask(shutil.rmtree, result.workdir, ignore_errors=True),
     )

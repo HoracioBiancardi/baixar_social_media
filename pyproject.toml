@@ -12,6 +12,8 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "yt-dlp>=2024.1.1",
     "python-dotenv>=1.0.0",
+    "bgutil-ytdlp-pot-provider>=2.0.0",
+    "yt-dlp-ejs>=0.8.0",
 ]
 
 [project.scripts]
